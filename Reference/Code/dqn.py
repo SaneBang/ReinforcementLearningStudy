@@ -201,4 +201,4 @@ for idx in range(len(reward_records)):
     average_reward.append(np.average(avg_list))
 plt.plot(reward_records)
 plt.plot(average_reward)
-plt.show()
+plt.savefig("dqn.png")

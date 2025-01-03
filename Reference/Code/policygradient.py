@@ -105,4 +105,4 @@ for idx in range(len(reward_records)):
 # Plot
 plt.plot(reward_records)
 plt.plot(average_reward)
-plt.show()
+plt.savefig('PolicyGradient.png')
