@@ -13,13 +13,13 @@
 
 ## Introduction
 
-Here is Intro
+
 
 ---
 
 ## Code
 
-Here is Code
+DQN : OpenAI GYM
 
 ---
 
