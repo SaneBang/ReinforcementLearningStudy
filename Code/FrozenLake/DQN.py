@@ -18,6 +18,7 @@ os.environ['CUDA_LAUNCH_BLOCKING'] = '1' # Used for debugging; CUDA related erro
 
 # Seed everything for reproducible results
 seed = 2024
+
 np.random.seed(seed)
 np.random.default_rng(seed)
 os.environ['PYTHONHASHSEED'] = str(seed)
@@ -30,10 +31,6 @@ if torch.cuda.is_available():
 
 class ReplayMemory:
     def __init__(self, capacity):
-        """
-        Experience Replay Memory defined by deques to store transitions/agent experiences
-        """
-        
         self.capacity = capacity
         
         self.states       = deque(maxlen=capacity)
@@ -44,10 +41,6 @@ class ReplayMemory:
         
         
     def store(self, state, action, next_state, reward, done):
-        """
-        Append (store) the transitions to their respective deques
-        """
-        
         self.states.append(state)
         self.actions.append(action)
         self.next_states.append(next_state)
@@ -56,12 +49,7 @@ class ReplayMemory:
         
         
     def sample(self, batch_size):
-        """
-        Randomly sample transitions from memory, then convert sampled transitions
-        to tensors and move to device (CPU or GPU).
-        """
-        
-        indices = np.random.choice(len(self), size=batch_size, replace=False)
+        indices = np.random.choice(len(self), size=batch_size, replace=False)   #인덱스를 배치 사이즈만큼 선택
 
         states = torch.stack([torch.as_tensor(self.states[i], dtype=torch.float32, device=device) for i in indices]).to(device)
         actions = torch.as_tensor([self.actions[i] for i in indices], dtype=torch.long, device=device)
@@ -73,31 +61,12 @@ class ReplayMemory:
     
     
     def __len__(self):
-        """
-        To check how many samples are stored in the memory. self.dones deque 
-        represents the length of the entire memory.
-        """
-        
         return len(self.dones)
     
     
 class DQN_Network(nn.Module):
-    """
-    The Deep Q-Network (DQN) model for reinforcement learning.
-    This network consists of Fully Connected (FC) layers with ReLU activation functions.
-    """
-    
     def __init__(self, num_actions, input_dim):
-        """
-        Initialize the DQN network.
-        
-        Parameters:
-            num_actions (int): The number of possible actions in the environment.
-            input_dim (int): The dimensionality of the input state space.
-        """
-        
         super(DQN_Network, self).__init__()
-                                                          
         self.FC = nn.Sequential(
             nn.Linear(input_dim, 12),
             nn.ReLU(inplace=True),
@@ -114,30 +83,13 @@ class DQN_Network(nn.Module):
         
         
     def forward(self, x):
-        """
-        Forward pass of the network to find the Q-values of the actions.
-        
-        Parameters:
-            x (torch.Tensor): Input tensor representing the state.
-        
-        Returns:
-            Q (torch.Tensor): Tensor containing Q-values for each action.
-        """
-        
         Q = self.FC(x)    
         return Q
     
         
 class DQN_Agent:
-    """
-    DQN Agent Class. This class defines some key elements of the DQN algorithm,
-    such as the learning method, hard update, and action selection based on the
-    Q-value of actions or the epsilon-greedy policy.
-    """
-    
     def __init__(self, env, epsilon_max, epsilon_min, epsilon_decay, 
                   clip_grad_norm, learning_rate, discount, memory_capacity):
-        
         # To save the history of network loss
         self.loss_history = []
         self.running_loss = 0
@@ -165,16 +117,6 @@ class DQN_Agent:
                 
 
     def select_action(self, state):
-        """
-        Selects an action using epsilon-greedy strategy OR based on the Q-values.
-        
-        Parameters:
-            state (torch.Tensor): Input tensor representing the state.
-        
-        Returns:
-            action (int): The selected action.
-        """
-        
         # Exploration: epsilon-greedy
         if np.random.random() < self.epsilon_max:
             return self.action_space.sample()
@@ -183,50 +125,15 @@ class DQN_Agent:
         with torch.no_grad():
             Q_values = self.main_network(state)
             action = torch.argmax(Q_values).item()
-                        
             return action
    
 
     def learn(self, batch_size, done):
-        """
-        Train the main network using a batch of experiences sampled from the replay memory.
-        
-        Parameters:
-            batch_size (int): The number of experiences to sample from the replay memory.
-            done (bool): Indicates whether the episode is done or not. If done,
-            calculate the loss of the episode and append it in a list for plot.
-        """ 
-        
         # Sample a batch of experiences from the replay memory
         states, actions, next_states, rewards, dones = self.replay_memory.sample(batch_size)
-                    
-        
-        # # The following prints are for debugging. Use them to indicate the correct shape of the tensors.
-        # print('Before--------Before')
-        # print("states:", states.shape)
-        # print("actions:", actions.shape)
-        # print("next_states:", next_states.shape)
-        # print("rewards:", rewards.shape)
-        # print("dones:", dones.shape)
-               
-         
-        # # Preprocess the data for training
-        # states        = states.unsqueeze(1)
-        # next_states   = next_states.unsqueeze(1)
         actions       = actions.unsqueeze(1)
         rewards       = rewards.unsqueeze(1)
         dones         = dones.unsqueeze(1)       
-        
-        
-        # # The following prints are for debugging. Use them to indicate the correct shape of the tensors.
-        # print()
-        # print('After--------After')
-        # print("states:", states.shape)
-        # print("actions:", actions.shape)
-        # print("next_states:", next_states.shape)
-        # print("rewards:", rewards.shape)
-        # print("dones:", dones.shape)
-      
         
         predicted_q = self.main_network(states) # forward pass through the main network to find the Q-values of the states
         predicted_q = predicted_q.gather(dim=1, index=actions) # selecting the Q-values of the actions that were actually taken
