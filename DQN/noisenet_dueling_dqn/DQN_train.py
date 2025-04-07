@@ -8,6 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+import math 
+
 from stable_baselines3.common.atari_wrappers import (
     ClipRewardEnv,
     EpisodicLifeEnv,
@@ -41,10 +43,58 @@ def make_env(env_id, seed, idx, capture_video):
     return thunk
 
 
+
+class NoisyLinear(nn.Module):
+    def __init__(self, in_features, out_features, std_init=0.5):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.std_init = std_init
+
+        self.weight_mu = nn.Parameter(torch.FloatTensor(out_features, in_features))
+        self.weight_sigma = nn.Parameter(torch.FloatTensor(out_features, in_features))
+        self.register_buffer("weight_epsilon", torch.FloatTensor(out_features, in_features))
+
+        self.bias_mu = nn.Parameter(torch.FloatTensor(out_features))
+        self.bias_sigma = nn.Parameter(torch.FloatTensor(out_features))
+        self.register_buffer("bias_epsilon", torch.FloatTensor(out_features))
+
+        self.reset_parameters()
+        self.reset_noise()
+
+    def reset_parameters(self):
+        mu_range = 1 / math.sqrt(self.in_features)
+        self.weight_mu.data.uniform_(-mu_range, mu_range)
+        self.weight_sigma.data.fill_(self.std_init / math.sqrt(self.in_features))
+
+        self.bias_mu.data.uniform_(-mu_range, mu_range)
+        self.bias_sigma.data.fill_(self.std_init / math.sqrt(self.out_features))
+
+    def reset_noise(self):
+        epsilon_in = self._scale_noise(self.in_features)
+        epsilon_out = self._scale_noise(self.out_features)
+        self.weight_epsilon.copy_(epsilon_out.ger(epsilon_in))
+        self.bias_epsilon.copy_(epsilon_out)
+
+    def forward(self, x):
+        if self.training:
+            weight = self.weight_mu + self.weight_sigma * self.weight_epsilon
+            bias = self.bias_mu + self.bias_sigma * self.bias_epsilon
+        else:
+            weight = self.weight_mu
+            bias = self.bias_mu
+        return F.linear(x, weight, bias)
+
+    def _scale_noise(self, size):
+        x = torch.randn(size)
+        return x.sign() * x.abs().sqrt()
+
+
+
 class QNetwork(nn.Module):
     def __init__(self, env):
         super().__init__()
-        self.network = nn.Sequential(
+        self.feature_extractor = nn.Sequential(
             nn.Conv2d(4, 32, 8, stride=4),
             nn.ReLU(),
             nn.Conv2d(32, 64, 4, stride=2),
@@ -52,18 +102,35 @@ class QNetwork(nn.Module):
             nn.Conv2d(64, 64, 3, stride=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(3136, 512),
+        )
+        self.flattened_size = 3136
+
+        self.value_stream = nn.Sequential(
+            NoisyLinear(self.flattened_size, 512),
             nn.ReLU(),
-            nn.Linear(512, env.single_action_space.n),
+            NoisyLinear(512, 1),
+        )
+
+        self.advantage_stream = nn.Sequential(
+            NoisyLinear(self.flattened_size, 512),
+            nn.ReLU(),
+            NoisyLinear(512, env.single_action_space.n),
         )
 
     def forward(self, x):
-        return self.network(x / 255.0)
+        x = x / 255.0
+        features = self.feature_extractor(x)
+        values = self.value_stream(features)
+        advantages = self.advantage_stream(features)
+        q_values = values + (advantages - advantages.mean(dim=1, keepdim=True))
+        return q_values
+
+    def reset_noise(self):
+        for m in self.modules():
+            if isinstance(m, NoisyLinear):
+                m.reset_noise()
 
 
-def linear_schedule(start_e: float, end_e: float, duration: int, t: int):
-    slope = (end_e - start_e) / duration
-    return max(slope * t + start_e, end_e)
 
 class ReplayBuffer:
     def __init__(self, buffer_size, state_dim, action_dim, device="cpu"):
@@ -138,7 +205,7 @@ if __name__ == "__main__":
     tau = 1.0
 
     episode = 0
-    use_wandb = False
+    use_wandb = True
     if use_wandb:
         import wandb
 
@@ -185,10 +252,7 @@ if __name__ == "__main__":
 
     state, _ = envs.reset(seed=seed)
     for global_step in range(total_timesteps):
-        epsilon = linear_schedule(start_e, end_e, exploration_fraction * total_timesteps, global_step)
-        if random.random() < epsilon:
-            actions = np.array([envs.single_action_space.sample() for _ in range(envs.num_envs)])
-        else:
+        with torch.no_grad():
             q_values = q_network(torch.Tensor(state).to(device))
             actions = torch.argmax(q_values, dim=1).cpu().numpy()
 
@@ -204,7 +268,6 @@ if __name__ == "__main__":
                                 "episode": episode,
                                 "episodic_return": info["episode"]["r"],
                                 "episodic_length": info["episode"]["l"],
-                                "epsilon": epsilon,
                                 "global_step": global_step,
                             }
                         )
@@ -220,6 +283,8 @@ if __name__ == "__main__":
 
         if global_step > learning_starts:
             if global_step % train_frequency == 0:
+                q_network.reset_noise()
+                target_network.reset_noise()
                 obs, actions, next_obs, rewards, dones = rb.sample(batch_size)
 
                 with torch.no_grad():

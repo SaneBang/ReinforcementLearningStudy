@@ -37,7 +37,7 @@ def make_env(env_id, seed, idx, capture_video):
 class QNetwork(nn.Module):
     def __init__(self, env):
         super().__init__()
-        self.network = nn.Sequential(
+        self.feature_extractor = nn.Sequential(
             nn.Conv2d(4, 32, 8, stride=4),
             nn.ReLU(),
             nn.Conv2d(32, 64, 4, stride=2),
@@ -45,18 +45,31 @@ class QNetwork(nn.Module):
             nn.Conv2d(64, 64, 3, stride=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(3136, 512),
+        )
+        self.flattened_size = 3136  # 64 * 7 * 7 from standard Atari conv layers
+        self.value_stream = nn.Sequential(
+            nn.Linear(self.flattened_size, 512),
             nn.ReLU(),
-            nn.Linear(512, env.action_space.n),
+            nn.Linear(512, 1)
+        )
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(self.flattened_size, 512),
+            nn.ReLU(),
+            nn.Linear(512, env.action_space.n)
         )
 
     def forward(self, x):
-        return self.network(x / 255.0)
+        x = x / 255.0  # normalize pixel values
+        features = self.feature_extractor(x)
+        values = self.value_stream(features)
+        advantages = self.advantage_stream(features)
+        q_values = values + (advantages - advantages.mean(dim=1, keepdim=True))
+        return q_values
 
 
 if __name__ == "__main__":
-    model_file = "./model/Breakout_dqn_classic_10000.pth"
-    seed = 0
+    model_file = "./model/Breakout_dqn_classic_9000.pth"
+    seed = 1
     env_id = "BreakoutNoFrameskip-v4"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     capture_video = True
