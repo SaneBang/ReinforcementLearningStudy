@@ -4,12 +4,10 @@ import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
 import gymnasium as gym
-import matplotlib.pyplot as plt
-import pandas as pd
-import seaborn as sns
+import wandb
 import os
 
-# 저장 경로 설정
+# 저장 디렉토리
 save_dir = "./model_halfcheetah"
 os.makedirs(save_dir, exist_ok=True)
 
@@ -31,75 +29,93 @@ class PolicyNetwork(nn.Module):
 
 class REINFORCE:
     def __init__(self, obs_dim, act_dim, lr=1e-4, gamma=0.99):
-        self.gamma = gamma
-        self.eps = 1e-6
         self.policy = PolicyNetwork(obs_dim, act_dim)
-        self.optimizer = torch.optim.AdamW(self.policy.parameters(), lr=lr)
-        self.log_probs, self.rewards = [], []
+        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr)
+        self.gamma = gamma
 
-    def sample_action(self, state):
-        state = torch.tensor([state], dtype=torch.float32)
+    def get_action(self, state):
+        state = torch.tensor(state, dtype=torch.float32)
         mean, std = self.policy(state)
-        dist = Normal(mean, std + self.eps)
+        dist = Normal(mean, std)
         action = dist.sample()
-        self.log_probs.append(dist.log_prob(action).sum())
-        return action.detach().numpy()
+        log_prob = dist.log_prob(action).sum()
+        return action.detach().numpy(), log_prob
 
-    def update(self):
-        R, returns = 0, []
-        for r in reversed(self.rewards):
-            R = r + self.gamma * R
-            returns.insert(0, R)
-        returns = torch.tensor(returns)
-        log_probs = torch.stack(self.log_probs)
-        loss = -(log_probs * returns).sum()
+    def update(self, rewards, log_probs):
+        discounted_returns = []
+        G = 0
+        for r in reversed(rewards):
+            G = r + self.gamma * G
+            discounted_returns.insert(0, G)
+        discounted_returns = torch.tensor(discounted_returns, dtype=torch.float32)
+
+        loss = 0
+        for log_prob, G in zip(log_probs, discounted_returns):
+            loss -= log_prob * G
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        self.log_probs.clear(), self.rewards.clear()
 
-# ✅ HalfCheetah-v5 환경 설정
-env = gym.make("HalfCheetah-v5")
-env = gym.wrappers.RecordEpisodeStatistics(env, 50)
-obs_dim = env.observation_space.shape[0]
-act_dim = env.action_space.shape[0]
-
-all_rewards = []
-for seed in [1]:
+def train_reinforce(seed):
+    # 시드 설정
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+
+    env = gym.make("HalfCheetah-v5")
+    obs_dim = env.observation_space.shape[0]
+    act_dim = env.action_space.shape[0]
+
     agent = REINFORCE(obs_dim, act_dim)
-    seed_rewards = []
-    for ep in range(1000):  # 보통 1,000~3,000 에피소드로도 충분
-        obs, _ = env.reset(seed=seed)
+
+    wandb.init(
+        project="REINFORCE-HalfCheetah",
+        name=f"REINFORCE-seed{seed}",
+        group="REINFORCE-HalfCheetah",
+        config={
+            "env": "HalfCheetah-v5",
+            "lr": 1e-4,
+            "gamma": 0.99,
+            "episodes": 10000,
+            "hidden_units": 64,
+            "seed": seed
+        },
+        save_code=True
+    )
+
+    num_episodes = 10000
+    score_list = []
+
+    for ep in range(num_episodes):
+        state, _ = env.reset()
+        log_probs = []
+        rewards = []
+        total_reward = 0
+
         done = False
         while not done:
-            action = agent.sample_action(obs)
-            obs, reward, terminated, truncated, _ = env.step(action)
-            agent.rewards.append(reward)
+            action, log_prob = agent.get_action(state)
+            next_state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
-        seed_rewards.append(env.return_queue[-1])
-        agent.update()
-        if ep % 100 == 0:
-            print(f"Seed {seed} Episode {ep} AvgReward (last 50): {int(np.mean(env.return_queue))}")
 
-    # ✅ 모델 저장
-    model_path = os.path.join(save_dir, f"reinforce_policy_seed{seed}.pt")
-    torch.save(agent.policy.state_dict(), model_path)
-    print(f"Saved model to: {model_path}")
+            log_probs.append(log_prob)
+            rewards.append(reward)
+            total_reward += reward
+            state = next_state
 
-    all_rewards.append(seed_rewards)
+        agent.update(rewards, log_probs)
+        score_list.append(total_reward)
 
-# ✅ 보상 그래프 저장
-sns.set(style="darkgrid")
-df = pd.DataFrame(all_rewards).T.melt(var_name="seed", value_name="reward")
-sns.lineplot(data=df, x=df.index % len(seed_rewards), y="reward", hue="seed")
-plt.title("REINFORCE on HalfCheetah-v5")
-plt.xlabel("Episode")
-plt.ylabel("Reward")
-plt.tight_layout()
-plot_path = os.path.join(save_dir, "reinforce_reward_plot.png")
-plt.savefig(plot_path)
-plt.show()
-print(f"Saved plot to: {plot_path}")
+        if (ep + 1) % 10 == 0:
+            avg_reward = np.mean(score_list[-10:])
+            print(f"Seed {seed} | Episode {ep+1} | Average Reward: {avg_reward:.2f}")
+            wandb.log({"episode": ep+1, "avg_reward": avg_reward})
+
+    torch.save(agent.policy.state_dict(), os.path.join(save_dir, f"reinforce_policy_seed{seed}.pt"))
+
+    wandb.finish()
+
+if __name__ == "__main__":
+    # for seed in [1, 2, 3, 5, 8]:
+    for seed in [1]:
+        train_reinforce(seed)
