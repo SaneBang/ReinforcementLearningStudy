@@ -32,6 +32,7 @@ class REINFORCE:
         self.policy = PolicyNetwork(obs_dim, act_dim)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr)
         self.gamma = gamma
+        self.loss = 0
 
     def get_action(self, state):
         state = torch.tensor(state, dtype=torch.float32)
@@ -52,6 +53,8 @@ class REINFORCE:
         loss = 0
         for log_prob, G in zip(log_probs, discounted_returns):
             loss -= log_prob * G
+
+        self.loss = loss
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -76,14 +79,14 @@ def train_reinforce(seed):
             "env": "HalfCheetah-v5",
             "lr": 1e-4,
             "gamma": 0.99,
-            "episodes": 10000,
+            "episodes": 100000,
             "hidden_units": 64,
             "seed": seed
         },
         save_code=True
     )
 
-    num_episodes = 10000
+    num_episodes = 100000
     score_list = []
 
     for ep in range(num_episodes):
@@ -110,12 +113,12 @@ def train_reinforce(seed):
             avg_reward = np.mean(score_list[-10:])
             print(f"Seed {seed} | Episode {ep+1} | Average Reward: {avg_reward:.2f}")
             wandb.log({"episode": ep+1, "avg_reward": avg_reward})
+            wandb.log({"episode": ep+1, "loss": agent.loss})
 
     torch.save(agent.policy.state_dict(), os.path.join(save_dir, f"reinforce_policy_seed{seed}.pt"))
 
     wandb.finish()
 
 if __name__ == "__main__":
-    # for seed in [1, 2, 3, 5, 8]:
-    for seed in [1]:
+    for seed in [1, 2, 3, 5, 8]:
         train_reinforce(seed)

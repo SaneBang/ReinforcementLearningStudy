@@ -2,3 +2,4 @@ wandb/
 videos_eval/
 model/
 model_halfcheetah/
+model_halfcheetah_a3c/
