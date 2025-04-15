@@ -16,7 +16,7 @@ os.makedirs(save_dir, exist_ok=True)
 GAMMA = 0.99
 LAMBDA = 0.95  # GAE lambda
 LR = 1e-4
-NUM_WORKERS = 10
+NUM_WORKERS = 4
 MAX_EPISODES = 30000
 ENV_NAME = "HalfCheetah-v5"
 
@@ -40,8 +40,9 @@ class ActorCritic(nn.Module):
         value = self.value_head(x).squeeze(-1)
         return mean, std, value
 
+
 def compute_gae(rewards, values, next_value, dones, gamma, lam):
-    values = values + [next_value]
+    values = values + [next_value] #1000 + 1짜리 list
     gae = 0
     returns = []
     for step in reversed(range(len(rewards))):
@@ -56,11 +57,11 @@ def worker(rank, global_model, optimizer):
     act_dim = env.action_space.shape[0]
 
     local_model = ActorCritic(obs_dim, act_dim)
-    local_model.load_state_dict(global_model.state_dict())
+    local_model.load_state_dict(global_model.state_dict()) #Global Model의 parameter을 복사해온다.
 
     for episode in range(MAX_EPISODES):
         state, _ = env.reset()
-        log_probs = []
+        log_probs = [] #log(pi(a,s))
         values = []
         rewards = []
         dones = []
@@ -72,8 +73,11 @@ def worker(rank, global_model, optimizer):
         while not done:
             state_tensor = torch.tensor(state, dtype=torch.float32)
             mean, std, value = local_model(state_tensor)
-            dist = Normal(mean, std)
-            action = dist.sample()
+            
+            dist = Normal(mean, std) # Actor Critic으로부터 얻은 평균과 분산으로 distribution을 만든다. [6] mean과 std가 각 action space의 size만큼 있기 때문에
+            
+            action = dist.sample() # Action은 위의 분포에서 6가지 값을 가져온다.
+
             log_prob = dist.log_prob(action).sum()
             entropy = dist.entropy().sum()
 
@@ -93,7 +97,8 @@ def worker(rank, global_model, optimizer):
         with torch.no_grad():
             _, _, next_value = local_model(next_state_tensor)
 
-        returns = compute_gae(rewards, values, next_value, dones, GAMMA, LAMBDA)
+        returns = compute_gae(rewards, values, next_value, dones, GAMMA, LAMBDA) #이전 1000번간의 reward, value, next value, dones를 넣어준다.
+
         returns = torch.tensor(returns, dtype=torch.float32)
         values = torch.stack(values)
         log_probs = torch.stack(log_probs)
