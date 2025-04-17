@@ -11,6 +11,7 @@ import wandb
 import random
 import time
 
+#test
 class ReplayBuffer:
     def __init__(self, state_dim, max_len=100000, device='cpu'):
         self.states   = np.zeros((max_len, state_dim), dtype=np.float32)
