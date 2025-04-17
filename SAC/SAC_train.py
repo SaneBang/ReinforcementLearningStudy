@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.multiprocessing as mp
+import torch.nn.functional as F
+import torch.optim as optim
 from torch.distributions.normal import Normal
 import gymnasium as gym
 import numpy as np
 import os
-import torch.nn.functional as F
 import wandb
 import random
 import time
@@ -160,11 +161,20 @@ if __name__ == "__main__":
     TargetQfunction01.load_state_dict(Qfunction01.state_dict())
     TargetQfunction02.load_state_dict(Qfunction02.state_dict())
 
-    QfuncOptim = optim.Adam(list(Qfunction01.parameters() + Qfunction02.parameters()), lr = 1e-3)  #? 이거 뭐임?4
+    QfuncOptim = optim.Adam(list(Qfunction01.parameters()) + list(Qfunction02.parameters()), lr = 1e-3)  #? 이거 뭐임?4
     SoftActorOptim = optim.Adam(list(SoftActor.parameters()), lr = 3e-4)
 
 
-    memory = ReplayBuffer(env.observation_space)
+    memory = ReplayBuffer(env.observation_space.shape)
 
     start_time = time.time()
     
+    state,_ = env.reset(seed=0)
+
+    for current_step in range(100000):
+        # if current_step < 10000:
+        #     actions = 
+        # else:
+        action, _, _ = SoftActor.get_action(torch.Tensor(env).to(device))
+        action = action.detach().cpu().numpy() 
+        print(action)
