@@ -125,7 +125,7 @@ os.makedirs(save_dir, exist_ok=True)
 ENV_NAME = "HalfCheetah-v5"
 GAMMA = 0.99
 LR = 3e-4
-MAX_EPISODES = 1000
+MAX_EPISODES = 3000
 MAX_EPISODE_LENGTH = 1000
 TAU = 0.005
 ALPHA = 0.2
@@ -135,7 +135,7 @@ seeds = [1, 2, 3, 5, 8]
 
 # === 학습 ===
 for seed in seeds:
-    wandb.init(project="SAC-HalfCheetah", name=f"seed-{seed}", config={
+    wandb.init(project="SAC-HalfCheetah-v1", name=f"seed-{seed}", config={
         "env": ENV_NAME,
         "gamma": GAMMA,
         "lr": LR,
@@ -225,6 +225,9 @@ for seed in seeds:
                 soft_update(ValFunc, TargValFunc, TAU)
 
         wandb.log({
+            "td_error": ((q1 - y).pow(2).mean() + (q2 - y).pow(2).mean()).item(),
+            "target_q_value": y.mean().item(),
+            "entropy": -logprob.mean().item(),
             "episode_reward": episode_reward,
             "value_loss": Val_loss.item(),
             "q_loss": q_loss.item(),
@@ -235,7 +238,7 @@ for seed in seeds:
         state, _ = env.reset()
         episode_reward = 0
 
-        if episode % 100 == 0:
+        if episode % 1000 == 0:
             torch.save(actor.state_dict(), os.path.join(save_dir, f"actor_seed{seed}_ep{episode}.pt"))
             torch.save(QFunc_1.state_dict(), os.path.join(save_dir, f"q1_seed{seed}_ep{episode}.pt"))
             torch.save(QFunc_2.state_dict(), os.path.join(save_dir, f"q2_seed{seed}_ep{episode}.pt"))
