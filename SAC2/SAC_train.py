@@ -224,15 +224,15 @@ for seed in seeds:
 
                 soft_update(ValFunc, TargValFunc, TAU)
 
-        wandb.log({
-            "td_error": ((q1 - y).pow(2).mean() + (q2 - y).pow(2).mean()).item(),
-            "target_q_value": y.mean().item(),
-            "entropy": -logprob.mean().item(),
-            "episode_reward": episode_reward,
-            "value_loss": Val_loss.item(),
-            "q_loss": q_loss.item(),
-            "actor_loss": actor_loss.item(),
-        }, step=episode)
+                wandb.log({
+                    "td_error": ((q1 - y).pow(2).mean() + (q2 - y).pow(2).mean()).item(),
+                    "target_q_value": y.mean().item(),
+                    "entropy": -logprob.mean().item(),
+                    "episode_reward": episode_reward,
+                    "value_loss": Val_loss.item(),
+                    "q_loss": q_loss.item(),
+                    "actor_loss": actor_loss.item(),
+                }, step=episode)
 
         print(f"[Seed {seed} | Episode {episode}] Reward: {episode_reward:.2f}")
         state, _ = env.reset()
@@ -243,6 +243,11 @@ for seed in seeds:
             torch.save(QFunc_1.state_dict(), os.path.join(save_dir, f"q1_seed{seed}_ep{episode}.pt"))
             torch.save(QFunc_2.state_dict(), os.path.join(save_dir, f"q2_seed{seed}_ep{episode}.pt"))
             torch.save(ValFunc.state_dict(), os.path.join(save_dir, f"val_seed{seed}_ep{episode}.pt"))
+
+    torch.save(actor.state_dict(), os.path.join(save_dir, f"actor_seed{seed}_Final.pt"))
+    torch.save(QFunc_1.state_dict(), os.path.join(save_dir, f"q1_seed{seed}_Final.pt"))
+    torch.save(QFunc_2.state_dict(), os.path.join(save_dir, f"q2_seed{seed}_Final.pt"))
+    torch.save(ValFunc.state_dict(), os.path.join(save_dir, f"val_seed{seed}_Final.pt"))
 
     env.close()
     wandb.finish()
