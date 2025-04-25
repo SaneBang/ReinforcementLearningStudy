@@ -75,6 +75,9 @@ class QNetwork(nn.Module):
         x = torch.cat([state, action], dim=-1)
         return self.model(x)
 
+
+
+
 LOG_STD_MIN = -5
 LOG_STD_MAX = 2
 
@@ -125,7 +128,7 @@ os.makedirs(save_dir, exist_ok=True)
 ENV_NAME = "HalfCheetah-v5"
 GAMMA = 0.99
 LR = 3e-4
-MAX_EPISODES = 3000
+MAX_EPISODES = 1000
 MAX_EPISODE_LENGTH = 1000
 TAU = 0.005
 ALPHA = 0.2
@@ -135,7 +138,7 @@ seeds = [1, 2, 3, 5, 8]
 
 # === 학습 ===
 for seed in seeds:
-    wandb.init(project="SAC-HalfCheetah-v1", name=f"seed-{seed}", config={
+    wandb.init(project="SAC-HalfCheetah-ep1000", name=f"seed-{seed}", config={
         "env": ENV_NAME,
         "gamma": GAMMA,
         "lr": LR,
@@ -237,12 +240,6 @@ for seed in seeds:
         print(f"[Seed {seed} | Episode {episode}] Reward: {episode_reward:.2f}")
         state, _ = env.reset()
         episode_reward = 0
-
-        if episode % 1000 == 0:
-            torch.save(actor.state_dict(), os.path.join(save_dir, f"actor_seed{seed}_ep{episode}.pt"))
-            torch.save(QFunc_1.state_dict(), os.path.join(save_dir, f"q1_seed{seed}_ep{episode}.pt"))
-            torch.save(QFunc_2.state_dict(), os.path.join(save_dir, f"q2_seed{seed}_ep{episode}.pt"))
-            torch.save(ValFunc.state_dict(), os.path.join(save_dir, f"val_seed{seed}_ep{episode}.pt"))
 
     torch.save(actor.state_dict(), os.path.join(save_dir, f"actor_seed{seed}_Final.pt"))
     torch.save(QFunc_1.state_dict(), os.path.join(save_dir, f"q1_seed{seed}_Final.pt"))
